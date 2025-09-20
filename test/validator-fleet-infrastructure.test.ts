@@ -8,14 +8,21 @@ import * as dotenv from 'dotenv';
 // Load environment variables from .env file
 dotenv.config();
 
+const shardId = process.env.SHARD ?? '1';
+const defaultAccount = process.env.AWS_ACCOUNT_ID ?? '123456789012';
+const defaultRegion = process.env.AWS_REGION ?? 'us-east-1';
+process.env.SHARD = shardId;
+process.env.AWS_ACCOUNT_ID = defaultAccount;
+process.env.AWS_REGION = defaultRegion;
+
 describe('Validator Fleet Infrastructure Stack', () => {
     const app = new App();
 
     // Create CommonInfrastructure to provide dependencies for ValidatorFleetInfrastructure
     const commonProps: CommonInfrastructureProps = {
-        shardId: process.env.SHARD || '1',
+        shardId,
         stage: 'dev',
-        env: { account: process.env.AWS_ACCOUNT_ID, region: process.env.AWS_REGION },
+        env: { account: defaultAccount, region: defaultRegion },
     };
     const commonStack = new CommonInfrastructure(app, 'CommonInfrastructureStack', commonProps);
 
@@ -24,13 +31,13 @@ describe('Validator Fleet Infrastructure Stack', () => {
     try {
         const validatorProps: ValidatorFleetInfrastructureProps = {
             stage: 'dev',
-            shardId: process.env.SHARD || '1',
+            shardId,
             allowedPrincipals: [],
             imageProviderAccount: process.env.IMAGE_PROVIDER_ACCOUNT || '',
             fleetVpc: commonStack.getFleetVpc(),
             fleetSecurityGroup: commonStack.getFleetSecurityGroup(),
             fleetConfigBucket: commonStack.getFleetConfigBucket(),
-            env: { account: process.env.AWS_ACCOUNT_ID, region: process.env.AWS_REGION },
+            env: { account: defaultAccount, region: defaultRegion },
         };
         const validatorStack = new ValidatorFleetInfrastructure(app, 'ValidatorFleetInfrastructureStack', validatorProps);
         validatorTemplate = Template.fromStack(validatorStack);
@@ -41,7 +48,7 @@ describe('Validator Fleet Infrastructure Stack', () => {
     if (validatorTemplate) {
         test('creates ECS Cluster with daemon scheduling strategy', () => {
             validatorTemplate.hasResourceProperties('AWS::ECS::Cluster', {
-                ClusterName: `Shard${process.env.SHARD}-ValidatorCluster`,
+                ClusterName: `Shard${shardId}-ValidatorCluster`,
             });
 
             validatorTemplate.hasResourceProperties('AWS::ECS::Service', {

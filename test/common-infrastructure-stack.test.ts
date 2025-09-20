@@ -8,12 +8,17 @@ import * as dotenv from 'dotenv';
 // Load environment variables from .env file
 dotenv.config();
 
+const defaultAccount = process.env.AWS_ACCOUNT_ID ?? '123456789012';
+const defaultRegion = process.env.AWS_REGION ?? 'us-east-1';
+process.env.AWS_ACCOUNT_ID = defaultAccount;
+process.env.AWS_REGION = defaultRegion;
+
 describe('Common Infrastructure Stack', () => {
     const app = new App();
     const props: CommonInfrastructureProps = {
         shardId: '3',
         stage: 'dev',
-        env: { account: process.env.AWS_ACCOUNT_ID, region: process.env.AWS_REGION },
+        env: { account: defaultAccount, region: defaultRegion },
     };
 
     const stack = new CommonInfrastructure(app, 'CommonInfrastructureStack', props);

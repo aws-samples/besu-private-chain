@@ -25,6 +25,8 @@ export interface CommonInfrastructureProps extends StackProps {
   readonly shardId: string;
   readonly stage: string;
   readonly env: Environment;
+  readonly enableCrossAccountPeer?: boolean;
+  readonly crossAccountPeerCidr?: string;
 }
 
 export class CommonInfrastructure extends Stack {
@@ -38,16 +40,26 @@ export class CommonInfrastructure extends Stack {
   region: string;
 
   private privateChainCommonInfrastructureS3BucketKey: Key;
+  private enableCrossAccountPeer: boolean;
+  private crossAccountPeerCidr?: string;
+  private crossAccountTransitGateway?: aws_ec2.CfnTransitGateway;
+  private crossAccountTransitGatewayAttachment?: aws_ec2.CfnTransitGatewayAttachment;
+  private crossAccountTransitGatewayRouteTable?: aws_ec2.CfnTransitGatewayRouteTable;
 
   constructor(scope: App, id: string, props: CommonInfrastructureProps) {
     super(scope, id, props);
     this.stage = props.stage;
     this.region = props.env.region ?? 'us-east-1';
     this.shardId = props.shardId;
+    this.enableCrossAccountPeer = props.enableCrossAccountPeer ?? false;
+    this.crossAccountPeerCidr = props.crossAccountPeerCidr;
     this.createVPCAndSG();
     this.createKeys();
     this.createS3Buckets(props.env.account ?? '');
     this.createVPCEndpoints();
+    if (this.enableCrossAccountPeer) {
+      this.createCrossAccountPeerResources();
+    }
     this.exportResources();
     NagSuppressions.addStackSuppressions(this, [
       {
@@ -118,6 +130,29 @@ export class CommonInfrastructure extends Stack {
       Port.udp(CLIENT_CONFIG.DISCOVERY_PORT),
       'P2P Port for Besu Nodes',
     );
+
+    if (this.enableCrossAccountPeer && this.crossAccountPeerCidr) {
+      this.fleetSecurityGroup.addIngressRule(
+        Peer.ipv4(this.crossAccountPeerCidr),
+        Port.tcp(CLIENT_CONFIG.DISCOVERY_PORT),
+        'Cross-account Besu TCP P2P',
+      );
+      this.fleetSecurityGroup.addIngressRule(
+        Peer.ipv4(this.crossAccountPeerCidr),
+        Port.udp(CLIENT_CONFIG.DISCOVERY_PORT),
+        'Cross-account Besu UDP P2P',
+      );
+      this.fleetSecurityGroup.addEgressRule(
+        Peer.ipv4(this.crossAccountPeerCidr),
+        Port.tcp(CLIENT_CONFIG.DISCOVERY_PORT),
+        'Cross-account Besu TCP P2P',
+      );
+      this.fleetSecurityGroup.addEgressRule(
+        Peer.ipv4(this.crossAccountPeerCidr),
+        Port.udp(CLIENT_CONFIG.DISCOVERY_PORT),
+        'Cross-account Besu UDP P2P',
+      );
+    }
 
     this.fleetSecurityGroup.addEgressRule(
       this.fleetSecurityGroup,
@@ -210,6 +245,54 @@ export class CommonInfrastructure extends Stack {
     }
   }
 
+  private createCrossAccountPeerResources(): void {
+    const isolatedSubnets = this.fleetVpc.isolatedSubnets;
+    if (isolatedSubnets.length === 0) {
+      throw new Error('Unable to configure cross-account peer: no isolated subnets available for TGW attachment.');
+    }
+
+    this.crossAccountTransitGateway = new aws_ec2.CfnTransitGateway(this, 'CrossAccountTransitGateway', {
+      description: 'Transit Gateway enabling cross-account Besu peer connectivity',
+      amazonSideAsn: 64512,
+      defaultRouteTableAssociation: 'disable',
+      defaultRouteTablePropagation: 'disable',
+      dnsSupport: 'enable',
+    });
+
+    this.crossAccountTransitGatewayRouteTable = new aws_ec2.CfnTransitGatewayRouteTable(this, 'CrossAccountTransitGatewayRouteTable', {
+      transitGatewayId: this.crossAccountTransitGateway.attrId,
+    });
+
+    const attachmentSubnets = isolatedSubnets.slice(0, 2).map((subnet) => subnet.subnetId);
+
+    this.crossAccountTransitGatewayAttachment = new aws_ec2.CfnTransitGatewayAttachment(
+      this,
+      'CrossAccountTransitGatewayAttachment',
+      {
+        transitGatewayId: this.crossAccountTransitGateway.attrId,
+        vpcId: this.fleetVpc.vpcId,
+        subnetIds: attachmentSubnets,
+        options: {
+          DnsSupport: 'enable',
+          Ipv6Support: 'disable',
+        },
+      },
+    );
+
+    new aws_ec2.CfnTransitGatewayRouteTableAssociation(this, 'CrossAccountTransitGatewayRouteTableAssociation', {
+      transitGatewayAttachmentId: this.crossAccountTransitGatewayAttachment.attrId,
+      transitGatewayRouteTableId: this.crossAccountTransitGatewayRouteTable.attrTransitGatewayRouteTableId,
+    });
+
+    if (this.crossAccountPeerCidr) {
+      new aws_ec2.CfnTransitGatewayRoute(this, 'CrossAccountTransitGatewayRoute', {
+        destinationCidrBlock: this.crossAccountPeerCidr,
+        transitGatewayAttachmentId: this.crossAccountTransitGatewayAttachment.attrId,
+        transitGatewayRouteTableId: this.crossAccountTransitGatewayRouteTable.attrTransitGatewayRouteTableId,
+      });
+    }
+  }
+
   private createVPCEndPointSecurityGroup(): ISecurityGroup {
     const vpcEndpointSecurityGroup = new SecurityGroup(this, `endpoint-sg`, {
       vpc: this.fleetVpc,
@@ -238,6 +321,30 @@ export class CommonInfrastructure extends Stack {
       exportName: `S3BucketKeyArn`,
       description: 'The ARN of the KMS Key for the S3 Bucket',
     });
+
+    if (this.enableCrossAccountPeer && this.crossAccountTransitGateway) {
+      new CfnOutput(this, 'CrossAccountTransitGatewayIdOutput', {
+        value: this.crossAccountTransitGateway.attrId,
+        exportName: 'CrossAccountTransitGatewayId',
+        description: 'Transit Gateway used for cross-account peers',
+      });
+    }
+
+    if (this.enableCrossAccountPeer && this.crossAccountTransitGatewayAttachment) {
+      new CfnOutput(this, 'CrossAccountTransitGatewayAttachmentIdOutput', {
+        value: this.crossAccountTransitGatewayAttachment.attrId,
+        exportName: 'CrossAccountTransitGatewayAttachmentId',
+        description: 'Transit Gateway attachment for Besu validator VPC',
+      });
+    }
+
+    if (this.enableCrossAccountPeer && this.crossAccountPeerCidr) {
+      new CfnOutput(this, 'CrossAccountPeerCidrOutput', {
+        value: this.crossAccountPeerCidr,
+        exportName: 'CrossAccountPeerCidr',
+        description: 'CIDR block reserved for cross-account peers',
+      });
+    }
   }
 
   /**

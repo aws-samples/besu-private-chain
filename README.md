@@ -13,9 +13,10 @@ This blueprint deploys a ready to use private blockchain network as a service ac
 3. [Deployment](#build-and-deploy)
 4. [Querying the Private Besu Network](#querying-the-private-besu-network)
 5. [Sample RPC request](#example-request-using-curl)
-6. [Troubleshooting](#troubleshooting)
-7. [Updating & Redeploying](#redeploying-and-softwarehardware-updates)
-8. [Clean up](#clean-up)
+6. [Cross-Account Peer Nodes](#cross-account-peer-nodes)
+7. [Troubleshooting](#troubleshooting)
+8. [Updating & Redeploying](#redeploying-and-softwarehardware-updates)
+9. [Clean up](#clean-up)
 
 
 ## Architecture Overview
@@ -199,6 +200,50 @@ Request:
 ```bash
 curl -H "Content-Type:text/html" -X POST -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id": 1}' http://vpce-0118de8e1d1f5be03-9raw1iaj.vpce-svc-0a174ea54498a1aa0.us-east-1.vpce.amazonaws.com
 ```
+
+## Cross-Account Peer Nodes
+
+To let a partner account participate in the network with a single Besu node, combine a Transit Gateway (TGW) attachment in the primary account with the lightweight `AccountBPeerNode` stack. Architectural details live in [`doc/cross-account-peer-architecture.md`](doc/cross-account-peer-architecture.md).
+
+### 1. Enable TGW resources in the network owner account (Account A)
+
+Deploy the common infrastructure stack with TGW enabled and reserve the CIDR that the partner VPC will use:
+
+```bash
+npx cdk deploy dev-noderunners-${USER}-PrivateChainCommonInfra \
+  --context enableCrossAccountPeer=true \
+  --context crossAccountPeerCidr=10.70.0.0/16
+```
+
+This outputs the TGW ID, attachment ID, and peer CIDR. Share those values with the partner account together with the config bucket/KMS ARNs that already store `genesis.json` and `static-nodes.json`.
+
+### 2. Deploy the peer node stack in the partner account (Account B)
+
+Accept the TGW RAM share, then deploy the new stack with the shared parameters via context or environment variables:
+
+```bash
+export DEPLOY_ACCOUNT_B_PEER_NODE=true
+export TRANSIT_GATEWAY_ID=tgw-0123456789abcdef0
+export CONFIG_BUCKET_ARN=arn:aws:s3:::privatechain-<region>-<account>-shard-1-config-bucket
+export CONFIG_BUCKET_KEY_ARN=arn:aws:kms:<region>:<account>:key/<key-id>
+export VALIDATOR_VPC_CIDR=10.60.0.0/16
+export PEER_VPC_CIDR=10.70.0.0/16
+export GENESIS_OBJECT_KEY=genesis-<id>.json        # optional override
+export STATIC_NODES_OBJECT_KEY=static-nodes-<id>.json
+npx cdk deploy dev-noderunners-${USER}-PrivateChainAccountBPeerNode --require-approval never
+```
+
+The stack provisions a private VPC, VPC endpoints, a TGW attachment, and a single-instance Auto Scaling group that boots Besu in Docker using the shared artifacts. Update `CONFIG_BUCKET_PREFIX`, `PEER_INSTANCE_TYPE`, or object keys if your repository layout differs.
+
+### 3. Validate connectivity
+
+After deployment, confirm that:
+
+- Account B's node can reach the validator CIDR over TCP/UDP `30303`.
+- Besu logs show gossip with the new peer.
+- RPC still flows through PrivateLink—TGW routes should never target RPC subnets.
+
+When the partner leaves the consortium, delete the Account B stack and remove the TGW attachment/route from Account A.
 Response:
 
 ```bash
