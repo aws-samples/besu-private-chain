@@ -201,6 +201,11 @@ Request:
 curl -H "Content-Type:text/html" -X POST -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id": 1}' http://vpce-0118de8e1d1f5be03-9raw1iaj.vpce-svc-0a174ea54498a1aa0.us-east-1.vpce.amazonaws.com
 ```
 
+Response:
+
+```bash
+{"jsonrpc":"2.0","id":1,"result":"0x1150c"}
+```
 ## Cross-Account Peer Nodes
 
 To let a partner account participate in the network with a single Besu node, combine a Transit Gateway (TGW) attachment in the primary account with the lightweight `AccountBPeerNode` stack. Architectural details live in [`doc/cross-account-peer-architecture.md`](doc/cross-account-peer-architecture.md).
@@ -244,11 +249,6 @@ After deployment, confirm that:
 - RPC still flows through PrivateLink—TGW routes should never target RPC subnets.
 
 When the partner leaves the consortium, delete the Account B stack and remove the TGW attachment/route from Account A.
-Response:
-
-```bash
-{"jsonrpc":"2.0","id":1,"result":"0x1150c"}
-```
 
 ## Troubleshooting
 
