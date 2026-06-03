@@ -83,6 +83,7 @@ import { getUserData } from './helper/ec2-helper';
 import { getBootnodesFileName, getGenesisFileName } from './helper/genesis-helper';
 import { NagSuppressions } from 'cdk-nag';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as path from 'path';
 import { HostedZone } from 'aws-cdk-lib/aws-route53';
 import { MonitoringFacade } from 'cdk-monitoring-constructs';
@@ -613,6 +614,21 @@ export class ValidatorFleetInfrastructure extends Stack {
       canContainersAccessInstanceRole: true,
     });
     this.validatorASG = validatorASG;
+
+    // Install OTel Collector via SSM State Manager (uses existing SSM VPC endpoint)
+    new ssm.CfnAssociation(this, 'OTelCollectorAssociation', {
+      name: 'AWS-ConfigureAWSPackage',
+      associationName: `Shard-${this.shardId}-OTelCollector`,
+      parameters: {
+        action: ['Install'],
+        name: ['AWSDistroOTel-Collector'],
+      },
+      targets: [{
+        key: 'tag:aws:autoscaling:groupName',
+        values: [getAutoscalingGroupName(this.shardId)],
+      }],
+      applyOnlyAtCronInterval: false,
+    });
   }
 
 

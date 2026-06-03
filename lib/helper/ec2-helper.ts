@@ -37,7 +37,7 @@ export function getUserData(
     'rm -f `whereis netstat`',
     // Install CloudWatchAgent and AWS Distro for OTel
     `yum install amazon-cloudwatch-agent -y`,
-    `echo "Installing AWS OTel Collector" && for i in {1..20}; do rpm -Uvh https://s3.us-east-1.amazonaws.com/aws-otel-collector/amazon_linux/arm64/latest/aws-otel-collector.rpm && break; echo "retrying $i..."; sleep 10; done && rpm -q --last aws-otel-collector`,
+    `echo "Waiting for SSM-managed OTel Collector install..." && for i in $(seq 1 30); do rpm -q aws-otel-collector &>/dev/null && break || sleep 10; done`,
     //Create OpenTelemetry config file
     `touch otelConfig.yaml`,
     `chmod 644 otelConfig.yaml`,
@@ -49,7 +49,7 @@ export function getUserData(
     // Start CWAgent and OpenTelemetry processes - Default OpenTelemetry config requires 'aoc' user.
     `useradd aoc`,
     `/usr/bin/amazon-cloudwatch-agent-ctl -a fetch-config -c file:cwAgentConfig.json -s`,
-    `/opt/aws/aws-otel-collector/bin/aws-otel-collector-ctl -c otelConfig.yaml -a start`,
+    `/opt/aws/aws-otel-collector/bin/aws-otel-collector-ctl -c otelConfig.yaml -a start 2>/dev/null || echo "OTel collector not available - skipping"`,
     // Install CFN signal for rolling updates.
     `yum install -y aws-cfn-bootstrap`,
 
