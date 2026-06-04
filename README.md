@@ -276,13 +276,4 @@ To remove all resources deployed by this project and avoid ongoing charges, foll
      ```
    - Confirm the destruction when prompted
 
-3. (Optional) Delete the Access Logs bucket:
-   - By default, the Access Logs bucket is retained for monitoring/auditing purposes
-   - If you want to delete it:
-     - Go to the AWS Management Console
-     - Navigate to S3
-     - Find the bucket ending with the phrase `access-log-bucket`
-     - Empty the bucket contents
-     - Delete the bucket
-
 **Note:** Be cautious when deleting resources. Make sure you don't need any of the data before proceeding with the cleanup.
