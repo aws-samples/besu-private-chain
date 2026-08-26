@@ -16,7 +16,7 @@ import { Key } from 'aws-cdk-lib/aws-kms';
 
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { BlockPublicAccess, Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
-import { getServiceAvailabilityZones } from './constants/availability-zones';
+import { getASGAvailabilityZonesCount } from './constants/availability-zones';
 import { NETWORK_CONFIG } from './constants/network';
 import { CLIENT_CONFIG } from './constants/besu';
 import { NagSuppressions } from 'cdk-nag';
@@ -242,10 +242,13 @@ export class CommonInfrastructure extends Stack {
   }
 
   /**
-   * Override this method in DeploymentStack to deploy to more than 3 AZs.
+   * Use the region's real availability zones (from CDK's AZ context provider),
+   * capped to the desired count for the stage. Deriving AZs from the region
+   * instead of fabricating `region + letter` keeps this portable across regions
+   * whose AZ letters aren't a/b/c (e.g. us-west-1 only exposes a and c).
    */
-  public get availabilityZones(): string[] | never {
-    return getServiceAvailabilityZones(this.stage, this.region);
+  public get availabilityZones(): string[] {
+    return super.availabilityZones.slice(0, getASGAvailabilityZonesCount(this.stage));
   }
 
   public getFleetVpc(): IVpc {
