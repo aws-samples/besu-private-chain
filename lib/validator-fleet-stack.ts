@@ -65,7 +65,7 @@ import { ValidatorInfoTable } from './constructs/validator-info-table';
 import { ValidatorInfoTableEntries } from './constructs/validator-info-table-entries';
 import { ValidatorECCKeySet } from './constructs/validator-ecc-keyset';
 
-import { getASGAvailabilityZones, getServiceAvailabilityZones } from './constants/availability-zones';
+import { getASGAvailabilityZonesCount } from './constants/availability-zones';
 import {
   BESU_IMAGE_TAG,
   CHAIN_CONFIG,
@@ -577,7 +577,7 @@ export class ValidatorFleetInfrastructure extends Stack {
       vpc: this.vpc,
       name: asgName,
       securityGroup: this.validatorSecurityGroup,
-      availabilityZones: getASGAvailabilityZones(this.stage, this.region),
+      availabilityZones: this.availabilityZones,
       blockchainNodeProps: {
         instanceType: process.env.VALIDATOR_INSTANCE_TYPE ?
           new InstanceType(process.env.VALIDATOR_INSTANCE_TYPE) :
@@ -803,10 +803,13 @@ export class ValidatorFleetInfrastructure extends Stack {
   }
 
   /**
-   * Override this method in DeploymentStack to deploy to more than 3 AZs.
+   * Use the region's real availability zones (from CDK's AZ context provider),
+   * capped to the desired count for the stage. Deriving AZs from the region
+   * instead of fabricating `region + letter` keeps this portable across regions
+   * whose AZ letters aren't a/b/c (e.g. us-west-1 only exposes a and c).
    */
-  public get availabilityZones(): string[] | never {
-    return getServiceAvailabilityZones(this.stage, this.region);
+  public get availabilityZones(): string[] {
+    return super.availabilityZones.slice(0, getASGAvailabilityZonesCount(this.stage));
   }
 
   public getServiceName(): string {
