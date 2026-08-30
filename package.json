@@ -19,7 +19,7 @@
     "@aws-sdk/client-s3": "*",
     "@aws-sdk/client-ssm": "*",
     "@aws-sdk/util-dynamodb": "*",
-    "aws-cdk-lib": "^2.148.1",
+    "aws-cdk-lib": "^2.177.0",
     "cdk-monitoring-constructs": "^2.0.0",
     "dotenv": "^16.4.5",
     "keccak256": "^1.0.6",
